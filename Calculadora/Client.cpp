@@ -1,4 +1,5 @@
- #include <sys/types.h>
+  // Copyright 2020 Renzo Sucari Velasquez
+  #include <sys/types.h>
   #include <sys/socket.h>
   #include <netinet/in.h>
   #include <arpa/inet.h>
@@ -28,7 +29,7 @@ int crearSocket()
     memset(&stSockAddr, 0, sizeof(struct sockaddr_in));
 
     stSockAddr.sin_family = AF_INET;
-    stSockAddr.sin_port = htons(45502);
+    stSockAddr.sin_port = htons(1130);
     Res = inet_pton(AF_INET, "127.0.0.1", &stSockAddr.sin_addr);
 
     if (0 > Res)
@@ -91,6 +92,16 @@ void reading()
 
 int main()
 {
+    std::cout << endl;
+    std::cout << "\t    CALCULADORA (SERVER - CLIENT)" << std::endl;
+    std::cout << "\t    -----------------------------" << std::endl << std::endl;
+    std::cout << "\t- IMPORTANTE:" << std::endl;
+    std::cout << "\t- Formato: [Numero1][espacio][Numero2][espacio][Operacion]" << std::endl;
+    std::cout << "\t- Operaciones: [+] [-] [*] [/]" << std::endl;
+    std::cout << "\t- Los numeros pueden tener 1,2,3,4... cifras, sin necesidad \n\t  de rellenar de ceros." << std::endl;
+    std::cout << "\t- Ejemplo: 456 34 +" << std::endl << std::endl;
+    std::cout << "\t- Para salir: salir" << std::endl << std::endl;
+    std::cout << "Ingrese sus operaciones:"<< std::endl;
 
     std::thread hilo1(writing);
     std::thread hilo2(reading);

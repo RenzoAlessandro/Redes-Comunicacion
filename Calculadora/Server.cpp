@@ -1,3 +1,4 @@
+  // Copyright 2020 Renzo Sucari Velasquez
   #include <sys/types.h>
   #include <sys/socket.h>
   #include <netinet/in.h>
@@ -12,7 +13,7 @@
 
  using namespace std;
  int SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
- string cierre = "adios";
+ string cierre = "salir";
  string userID;
 
  int crearSocket()
@@ -27,7 +28,7 @@
      memset(&stSockAddr, 0, sizeof(struct sockaddr_in));
 
      stSockAddr.sin_family = AF_INET;
-     stSockAddr.sin_port = htons(45502);
+     stSockAddr.sin_port = htons(1130);
      stSockAddr.sin_addr.s_addr = INADDR_ANY;
 
      if(-1 == bind(SocketFD,(const struct sockaddr *)&stSockAddr, sizeof(struct sockaddr_in)))
@@ -59,19 +60,15 @@
       string str2 (" ");
 
       size_t PrimerEspacio = mensaje.find(str2);
-      cout<<"el 1 Espacio en la posicion: "<<PrimerEspacio<<endl;
       size_t SegundoEspacio = mensaje.find(" ",PrimerEspacio+1);
-      cout<<"el 2 Espacio en la posicion: "<<SegundoEspacio<<endl;
-
-
       PrimerNumero.append(mensaje,0,PrimerEspacio);
       SegundoNumero.append(mensaje,PrimerEspacio+1,SegundoEspacio-PrimerEspacio-1);
       SimboloOperacion.append(mensaje,SegundoEspacio+1,1);
       int Primer = std::stoi(PrimerNumero);
       int Segundo = std::stoi(SegundoNumero);
-      cout<<"Primer Numero: "<<Primer<<endl;
-      cout<<"Segundo Numero: "<<Segundo<<endl;
-      cout<<"Operacion: "<<SimboloOperacion<<endl;
+      std::cout <<"Primer Numero: "<<Primer<< std::endl;
+      std::cout <<"Segundo Numero: "<<Segundo<< std::endl;
+      std::cout <<"Operacion: "<<SimboloOperacion<< std::endl;
       if (SimboloOperacion == "+")
       {
         Resultado = "La suma es: " + std::to_string(Primer + Segundo); 
@@ -94,13 +91,8 @@
   void writing()
   {
     string mssg = "";
-    do
-    {
-      getline(cin,mssg);
-      cout<<"No tienes permitido mandar mensajes."<<endl;
-   }
-   while(int(mssg.find(cierre)) < 0);
-     /* perform read write operations ... */
+    getline(cin,mssg);
+    std::cout <<"No tienes permitido mandar mensajes."<< std::endl;
   }
 
   void reading()
