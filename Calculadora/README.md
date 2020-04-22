@@ -5,7 +5,7 @@
   - El Cliente ingresa su operación: 562 326  +
   - El servidor responde: La suma es 888
 
-- Comandos para compilar:
+# Comandos para Compilar:
 
   - Server:  g++ -std=c++11 -o server Server.cpp -lpthread
   - CLient:  g++ -std=c++11 -o client Client.cpp -lpthread
