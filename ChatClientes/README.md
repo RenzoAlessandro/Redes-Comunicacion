@@ -14,9 +14,13 @@
    - Uno para leer del socket e imprimir en el terminal por el momento la lectura es una especia de pulling o busywait.
    - Otro para leer los mensajes del terminal y enviarlo  a través del socket.
 
+# Comandos en el Programa:
+- nickname : Para registrase.
+- list     : Listar todos los usuarios.
+- msg      : Enviar un mensaje.
+- exit     : Para salir.
 
-
-# Comandos para compilar:
+# Comandos para Compilar:
 
   - Server:  g++ -std=c++11 -o server Server.cpp -lpthread
   - Client1:  g++ -std=c++11 -o client1 Client.cpp -lpthread
