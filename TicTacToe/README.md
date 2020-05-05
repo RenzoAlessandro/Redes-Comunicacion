@@ -14,6 +14,6 @@
 
 # Comandos para Ejecutar:
 
-  - ./server 45502
-  - ./client1 127.0.0.1 45502
-  - ./client2 127.0.0.1 45502
+  - ./server
+  - ./client1 
+  - ./client2 

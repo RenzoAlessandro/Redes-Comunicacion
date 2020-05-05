@@ -1,9 +1,9 @@
+  // Copyright 2020 Renzo Sucari Velasquez
 #include <thread>
 #include <string>
 #include <iostream>
 #include <map>
 #include <vector>
-
 #include <unistd.h>
 #include <sys/types.h> 
 #include <sys/socket.h>
@@ -12,9 +12,6 @@
 
 using namespace std;
 
-//DESARROLLADO POR ALEJANDRO RISCO Y JOSE GABRIEL ZEVALLOS
-
-//Nicknames y socket_fds
 vector <int> sockets_jugadores;
 string tablero[3][3];
 
@@ -31,7 +28,8 @@ void llenar_tablero()
 
 string convertir_tablero()
 {
-    string tab = "";
+    string tab = "Tablero: ";
+    tab += "\n"; 
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < 3; j++)
@@ -62,30 +60,13 @@ void mandar_tablero()
     }    
 }
 
-void move(char symb, char x, char y)
+void movimientos(char symb, int x, int y)
 {
     string symbol(1, symb);
-    if(x == '0' && y == '0')
-        tablero[0][0] = symbol;
-    if(x == '0' && y == '1')
-        tablero[0][1] = symbol;
-    if(x == '0' && y == '2')
-        tablero[0][2] = symbol;
-    if(x == '1' && y == '0')
-        tablero[1][0] = symbol;
-    if(x == '1' && y == '1')
-        tablero[1][1] = symbol;
-    if(x == '1' && y == '2')
-        tablero[1][2] = symbol;
-    if(x == '2' && y == '0')
-        tablero[2][0] = symbol;
-    if(x == '2' && y == '1')
-        tablero[2][1] = symbol;
-    if(x == '2' && y == '2')
-        tablero[2][2] = symbol;
+    tablero[x][y] = symbol;
 }
 
-bool validar_victoria()
+bool Ganador()
 {
     if(tablero[0][0] != " " && (tablero[0][0] == tablero[0][1]) && (tablero[0][0] == tablero[0][2]))
         return true;
@@ -93,14 +74,12 @@ bool validar_victoria()
         return true;
     if(tablero[2][0] != " " && (tablero[2][0] == tablero[2][1]) && (tablero[2][0] == tablero[2][2]))
         return true;
-
     if(tablero[0][0] != " " && (tablero[0][0] == tablero[1][0]) && (tablero[0][0] == tablero[2][0]))
         return true;
     if(tablero[0][1] != " " && (tablero[0][1] == tablero[1][1]) && (tablero[0][1] == tablero[2][1]))
         return true;
     if(tablero[0][2] != " " && (tablero[0][2] == tablero[1][2]) && (tablero[0][2] == tablero[2][2]))
         return true;
-
     if(tablero[0][0] != " " && (tablero[0][0] == tablero[1][1]) && (tablero[0][0] == tablero[2][2]))
         return true;
     if(tablero[0][2] != " " && (tablero[0][2] == tablero[1][1]) && (tablero[0][2] == tablero[2][0]))
@@ -117,24 +96,21 @@ void attend_client(int socket_fd)
     {        
         char pos[3];
         read(socket_fd, pos, 3);
-        move(pos[0], pos[1], pos[2]);
-        if(validar_victoria())
+        int Pos_x = pos[1]-'0';
+        int Pos_y = pos[2]-'0';
+        std::cout << "Movimiento de "<< pos[0] <<": "<< Pos_x << " - "<< Pos_y<< std::endl;
+        movimientos(pos[0], Pos_x, Pos_y);
+        if(Ganador())
             write(socket_fd, "GANASTE", sizeof("GANASTE"));
         mandar_tablero();
     }
     close(socket_fd);
 }
 
-int main(int argc, const char** argv) 
+int main() 
 {
-    if (argc < 2) 
-    {
-        cout << "Error de servidor: No se especificaron los parametros de inicializacion" << endl;
-        exit(1);
-    }
-
     llenar_tablero();
-    int socket_fd, newsocket_fd, port_number = atoi(argv[1]);
+    int socket_fd, newsocket_fd, port_number = 45502;
 
     struct sockaddr_in serv_addr, cli_addr;
 
@@ -161,6 +137,9 @@ int main(int argc, const char** argv)
         thread th(attend_client, newsocket_fd);
         th.detach();
     }
+
+
+    shutdown(socket_fd, SHUT_RDWR);
 
     close(socket_fd);
     return 0; 
