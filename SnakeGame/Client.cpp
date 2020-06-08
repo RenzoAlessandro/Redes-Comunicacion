@@ -1,454 +1,247 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+// Copyright 2020 Renzo Sucari Velasquez
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <iostream>
-#include <thread>
+#include <time.h>
 #include <string.h>
-#include <termios.h>
-#include <vector>
-#include <utility>
 #include <ncurses.h>
-#include <cstdlib>
+#include <ctype.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h> 
 
-#define TAM_MSG 1000
-using namespace std;
-int SocketFD = socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
-int Res;
-string userID;
+#define PORT        7070
+#define HEIGHT      24
+#define WIDTH       80
+#define FRUIT       -1024
+#define BORDER      -99
+#define REFRESH     0.15
+#define WINNER      -94
+#define ONGOING     -34
+#define INTERRUPTED -30
+#define UP_KEY      'W'
+#define DOWN_KEY    'S'
+#define LEFT_KEY    'A'
+#define RIGHT_KEY   'D'
 
+WINDOW* win;
+char key = UP_KEY;
+int game_result = ONGOING;
 
-/***************************** ESTRUCTURA DEL SNAKE GAME *****************************/
+//Mensaje de error de salida
+void error(const char* msg){
+    perror(msg);
+    exit(0);
+}
 
-struct snakepart{
-  int x,y;
-  snakepart(int col,int row)
-  {
-    x=col;
-    y=row;
-  }
+//Crear hilo separado - Stevens, capitulo 12, pagina 428
+int make_thread(void* (*fn)(void *), void* arg){
+    int             err;
+    pthread_t       tid;
+    pthread_attr_t  attr;
 
-  snakepart()
-  {
-    x=0;
-    y=0;
-  }
-};
+    err = pthread_attr_init(&attr);
+    if(err != 0)
+        return err;
+    err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if(err == 0)
+        err = pthread_create(&tid, &attr, fn, arg);
+    pthread_attr_destroy(&attr);
+    return err;
+}
 
-class snakeclass{
-  int points,del;
-  //indicates that the snake get food (it makes the snake longer)
-  bool get;
-  //indicates the current direction of the snake
-  char direction;
+void* writing(void* arg){
+    int sockfd = *(int *) arg;
+    struct timespec ts;
+    ts.tv_sec = REFRESH;
+    ts.tv_nsec = ((int)(REFRESH * 1000) % 1000)  * 1000000;
+    while(game_result == ONGOING){
+        nanosleep(&ts, NULL);
+        int n = write(sockfd, &key, 1);
+        if(n < 0) 
+             error("ERROR writing to socket.");
+     }
+    return 0;
+}
 
-  int maxwidth;
-  int maxheight;
-  char partchar;
-  char oldalchar;
-  char etel;
-  snakepart food;
-  std::vector<snakepart> snake; //represent the snake
+void* actualizar_pantalla(void* arg){    
+    int  sockfd = *(int*) arg;
+    int  bytes_read;
+    int  game_map[HEIGHT][WIDTH];
+    int  map_size = HEIGHT * WIDTH * sizeof(game_map[0][0]);
+    char map_buffer[map_size];
+    int  i, j, n;
 
-  void putfood()
-  {
-    while(1)
-    {
-      int tmpx=rand()%maxwidth+1;
-      int tmpy=rand()%maxheight+1;
-      for(int i=0;i<snake.size();i++)
-        if(snake[i].x==tmpx && snake[i].y==tmpy)
-          continue;
-      if(tmpx>=maxwidth-2 || tmpy>=maxheight-3)
-        continue;
-      food.x=tmpx;
-      food.y=tmpy;
-      break;
+    while(game_result == ONGOING){
+
+        //Recibimos y leemos un mapa actualizado del servidor
+        bytes_read = 0;
+        bzero(map_buffer, map_size);
+        while(bytes_read < map_size){
+            n = read(sockfd, map_buffer + bytes_read, map_size - bytes_read);
+            if(n <= 0)
+                goto end;
+            bytes_read += n;
+        }
+        memcpy(game_map, map_buffer, map_size);
+
+        clear();
+        box(win, '#', '#');
+        refresh();
+        wrefresh(win);
+
+        //Cada posición en la matriz, verifique si esta un Snake (cabeza y cuerpo)
+        for(i = 1; i < HEIGHT-1; i++){
+            for(j = 1; j < WIDTH-1; j++){
+                int current = game_map[i][j];
+                //int colour = abs(current) % 7;
+                int colour = 6;
+
+                attron(COLOR_PAIR(colour)); 
+                if((current > 0) && (current != FRUIT)){               
+                    mvprintw(i, j, "  ");
+                    attroff(COLOR_PAIR(colour));
+                }
+                else if ((current < 0) && (current != FRUIT)){
+                    if(game_map[i-1][j] == -current)
+                        mvprintw(i, j, "  ");
+                    else if(game_map[i+1][j] == -current)
+                        mvprintw(i, j, "  ");
+                    else if(game_map[i][j-1] == -current)
+                        mvprintw(i, j, "  ");
+                    else if(game_map[i][j+1] == -current)
+                        mvprintw(i, j, "  ");
+                    attroff(COLOR_PAIR(colour));
+                }                
+                else if (current == FRUIT){ 
+                    attroff(COLOR_PAIR(colour));               
+                    mvprintw(i, j, "o");                    
+                }
+            }
+        }
+        refresh();
     }
-    move(food.y,food.x);
-    addch(etel);
-    refresh();
-  }
 
-  bool collision()
-  {
-    if(snake[0].x==0 || snake[0].x==maxwidth-1 || snake[0].y==0 || snake[0].y==maxheight-2)
-      return true;
-    for(int i=2;i<snake.size();i++)
-    {
-      if(snake[0].x==snake[i].x && snake[0].y==snake[i].y)
-        return true;
-    }
-    //collision with the food
-    if(snake[0].x==food.x && snake[0].y==food.y)
-    {
-      get=true;
-      putfood();
-      points+=10;
-      move(maxheight-1,0);
-      printw("%d",points);
-      if((points%100)==0)
-        del-=10000;
-    }else
-      get=false;
-    return false;
-  }
+    end: game_result = game_map[0][0];
+    return 0;
+}
 
+int main(int argc, char *argv[]){
+    int                 sockfd;
+    struct sockaddr_in  serv_addr;
+    struct hostent*     server;
+    char                key_buffer;
 
-  void movesnake()
-  {
-    //detect key
-    int tmp=getch();
-    switch(tmp)
-    {
-      case KEY_LEFT:
-        if(direction!='r')
-          direction='l';
-        break;
-      case KEY_UP:
-        if(direction!='d')
-          direction='u';
-        break;
-      case KEY_DOWN:
-        if(direction!='u')
-          direction='d';
-        break;
-      case KEY_RIGHT:
-        if(direction!='l')
-          direction='r';
-        break;
-      case KEY_BACKSPACE:
-        direction='q';
-        break;
-    }
-    //if there wasn't a collision with food
-    if(!get)
-    {
-      move(snake[snake.size()-1].y,snake[snake.size()-1].x);
-      printw(" ");
-      refresh();
-      snake.pop_back();
-    }
-    if(direction=='l')
-    {
-      snake.insert(snake.begin(),snakepart(snake[0].x-1,snake[0].y));
-    }else if(direction=='r'){
-      snake.insert(snake.begin(),snakepart(snake[0].x+1,snake[0].y));
-
-    }else if(direction=='u'){
-      snake.insert(snake.begin(),snakepart(snake[0].x,snake[0].y-1));
-    }else if(direction=='d'){
-      snake.insert(snake.begin(),snakepart(snake[0].x,snake[0].y+1));
-    }
-      move(snake[0].y,snake[0].x);
-      addch(partchar);
-    refresh();
-  }
-
-
+    if (argc < 2){
+       fprintf(stderr,"Please type:\n\t %s [server ip]\n to launch the game.\n", argv[0]);
+       exit(0);
+    }    
   
-public:
-  snakeclass()
-  {
-    initscr();
-    nodelay(stdscr,true);     //if there wasn't any key pressed don't wait for keypress
-    keypad(stdscr,true);      //init the keyboard
-    noecho();                 //don't write
-    curs_set(0);              //cursor invisible
-    getmaxyx(stdscr,maxheight,maxwidth);
-    partchar='x';
-    oldalchar=(char)219;
-    etel='*';
-    food.x=0;
-    food.y=0;
-    for(int i=0;i<5;i++)
-      snake.push_back(snakepart(40+i,10));
-    points=0;
-    del=110000;
-    get=0;
-    direction='l';
-    srand(time(NULL));
-    putfood();
-    //make the game-board -- up-vertical
-    for(int i=0;i<maxwidth-1;i++)
-    {
-      move(0,i);
-      addch(oldalchar);
+    //Obtener descriptor de socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) 
+        error("ERROR opening socket");
+     
+    //Obtenemos el host a partir de argv
+    server = gethostbyname(argv[1]);
+    if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host.\n");
+        exit(0);
     }
-    //left-horizontal
-    for(int i=0;i<maxheight-1;i++)
-    {
-      move(i,0);
-      addch(oldalchar);
-    }
-    //down-vertical
-    for(int i=0;i<maxwidth-1;i++)
-    {
-      move(maxheight-2,i);
-      addch(oldalchar);
-    }
-    //right-horizontal
-    for(int i=0;i<maxheight-1;i++)
-    {
-      move(i,maxwidth-2);
-      addch(oldalchar);
-    }
-    //draw the snake
-    for(int i=0;i<snake.size();i++)
-    {
-      move(snake[i].y,snake[i].x);
-      addch(partchar);
-    }
-    move(maxheight-1,0);
-    printw("%d",points);
-    move(food.y,food.x);
-    addch(etel);
-    refresh();
-  }
+    
+    //Establecemos los primeros n bytes del area en cero  
+    bzero((char *) &serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, 
+         (char *)&serv_addr.sin_addr.s_addr,
+         server->h_length);
+         
+    serv_addr.sin_port = htons(PORT);
+    
+    //Intentamos la conexion con el servidor
+    if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
+        error("ERROR connecting");
 
-  ~snakeclass()
-  {
-    nodelay(stdscr,false);      //turn back
-    getch();                    //wait until a key is pressed
+    //Crear ventana Ncurses (libreria)
+    initscr();      
+    cbreak();
+    noecho();
+    start_color();
+    use_default_colors();    
+    curs_set(0);
+
+    //Establecemos una ventana nueva
+    win = newwin(HEIGHT, WIDTH, 0, 0);
+
+    //Colores de los Snakes
+    init_pair(0, COLOR_WHITE, COLOR_BLUE);
+    init_pair(1, COLOR_WHITE, COLOR_RED);
+    init_pair(2, COLOR_WHITE, COLOR_GREEN);
+    init_pair(3, COLOR_BLACK, COLOR_YELLOW);
+    init_pair(4, COLOR_BLACK, COLOR_MAGENTA);
+    init_pair(5, COLOR_BLACK, COLOR_CYAN);
+    init_pair(6, COLOR_BLACK, COLOR_WHITE);
+
+    //Imprimimos el menu
+    mvprintw((HEIGHT-20)/2, (WIDTH-58)/2,"SNAKE GAME (CLIENT - CLIENT)");
+    mvprintw((HEIGHT-20)/2 + 1, (WIDTH-58)/2," Instrucciones:"); 
+    mvprintw((HEIGHT-20)/2 + 2, (WIDTH-58)/2," - Movimientos: W, S, A, D");
+    mvprintw((HEIGHT-20)/2 + 3, (WIDTH-58)/2," - Salir: . ");
+    mvprintw((HEIGHT-20)/2 + 4, (WIDTH-58)/2,"Presiona una tecla para continuar."); 
+    getch();
+
+    //Comience a escribir entradas al servidor cada REFRESH segundos 
+    //y actualizamos la pantalla
+    make_thread(actualizar_pantalla, &sockfd);
+    make_thread(writing, &sockfd);
+
+    while(game_result == ONGOING){
+        
+        //Obtener entrada del jugador con timeout
+        bzero(&key_buffer, 1);
+        timeout(REFRESH * 1000);
+        key_buffer = getch();
+        key_buffer = toupper(key_buffer);
+        if(key_buffer == '.'){
+            game_result = INTERRUPTED;
+            break;
+        } else if((key_buffer == UP_KEY) 
+               || (key_buffer == DOWN_KEY) 
+               || (key_buffer == LEFT_KEY) 
+               || (key_buffer == RIGHT_KEY))
+            key = key_buffer;
+    }
+  
+    //Mostramos al usuario que ganó
+    WINDOW* announcement = newwin(7, 35, (HEIGHT - 7)/2, (WIDTH - 35)/2);
+    box(announcement, 0, 0);
+    if (game_result == WINNER){
+        mvwaddstr(announcement, 2, (35-21)/2, "Tu ganas");
+        mvwaddstr(announcement, 4, (35-21)/2, "Presione cualquier tecla.");
+        wbkgd(announcement,COLOR_PAIR(2));
+    } else{
+        mvwaddstr(announcement, 2, (35-21)/2, "Tu pierdes");
+        if(game_result > 0)
+            mvwprintw(announcement, 3, (35-13)/2, "Player %d won.", game_result);
+        mvwaddstr(announcement, 4, (35-21)/2, "Presione cualquier tecla.");
+        wbkgd(announcement,COLOR_PAIR(1));
+    }
+    mvwin(announcement, (HEIGHT - 7)/2, (WIDTH - 35)/2);
+    wnoutrefresh(announcement);
+    wrefresh(announcement);
+    sleep(2);
+    wgetch(announcement);
+    delwin(announcement);
+    wclear(win);
+    
+    echo(); 
+    curs_set(1);  
     endwin();
-  }
+        
+    //Close connection
+    close(sockfd);
+    return 0;
 
-  void start()
-  {
-    while(1)
-    {
-      if(collision())
-      {
-        move(12,36);
-        printw("game_over");
-        break;
-      }
-      movesnake();
-      if(direction=='q')        //exit
-        break;
-      usleep(del);      //Linux delay
-    }
-  }
-};
-
-/***************************** ESTRUCTURA DEL SNAKE GAME *****************************/
-
-
-
-
-/***************************** LECTURA DE TECLADO *****************************/
-
-static struct termios old, current;
-
-/* Initialize new terminal i/o settings */
-void initTermios(int echo)
-{
-  tcgetattr(0, &old); /* grab old terminal i/o settings */
-  current = old; /* make new settings same as old settings */
-  current.c_lflag &= ~ICANON; /* disable buffered i/o */
-  if (echo) {
-      current.c_lflag |= ECHO; /* set echo mode */
-  } else {
-      current.c_lflag &= ~ECHO; /* set no echo mode */
-  }
-  tcsetattr(0, TCSANOW, &current); /* use these new terminal i/o settings now */
-}
-
-/* Restore old terminal i/o settings */
-void resetTermios(void)
-{
-  tcsetattr(0, TCSANOW, &old);
-}
-
-/* Read 1 character - echo defines echo mode */
-char getch_(int echo)
-{
-  char ch;
-  initTermios(echo);
-  ch = getchar();
-  resetTermios();
-  return ch;
-}
-
-/* Read 1 character without echo */
-char getchh(void)
-{
-  return getch_(0);
-}
-
-/* Read 1 character with echo */
-char getche(void)
-{
-  return getch_(1);
-}
-
-
-/***************************** LECTURA DE TECLADO *****************************/
-
-
-/*****************************      CONEXION     *****************************/
-
-int crearSocket()
-{
-  struct sockaddr_in stSockAddr;
-
-  if (-1 == SocketFD)
-    {
-      perror("cannot create socket");
-      exit(EXIT_FAILURE);
-    }
-
-    memset(&stSockAddr, 0, sizeof(struct sockaddr_in));
-
-    stSockAddr.sin_family = AF_INET;
-    stSockAddr.sin_port = htons(45501);
-    Res = inet_pton(AF_INET, "127.0.0.1", &stSockAddr.sin_addr);
-
-    if (0 > Res)
-    {
-      perror("error: first parameter is not a valid address family");
-      close(SocketFD);
-      exit(EXIT_FAILURE);
-    }
-    else if (0 == Res)
-    {
-      perror("char string (second parameter does not contain valid ipaddress");
-      close(SocketFD);
-      exit(EXIT_FAILURE);
-    }
-
-    if (-1 == connect(SocketFD, (const struct sockaddr *)&stSockAddr, sizeof(struct sockaddr_in)))
-    {
-      perror("connect failed");
-      close(SocketFD);
-      exit(EXIT_FAILURE);
-    }
-
-
-  return SocketFD;
-}
-int _socket = crearSocket();
-
-/*****************************      CONEXION     *****************************/
-
-int n;
-char buffer[TAM_MSG];
-bool termino = true;
-
-
-void writing()
-{
-  string moviminetos;
-  do
-  {
-    bzero(buffer,TAM_MSG);
-    char c;
-    c = getchh();
-
-    if(c == 'w')
-    {
-      buffer[0] = '1';
-      buffer[1] = '\0';
-      n = write(SocketFD,buffer,1);
-    }
-    if(c == 's')
-    {
-      buffer[0] = '2';
-      buffer[1] = '\0';
-      n = write(SocketFD,buffer,1);
-    }
-    if(c == 'a')
-    {
-      buffer[0] = '3';
-      buffer[1] = '\0';
-      n = write(SocketFD,buffer,1);
-    }
-    if(c == 'd')
-    {
-      buffer[0] = '4';
-      buffer[1] = '\0';
-      n = write(SocketFD,buffer,1);
-    }
-    if(c == 'x')
-    {
-      buffer[0] = '8';
-      buffer[1] = '\0';
-      n = write(SocketFD,buffer,1);
-      termino=false;
-    }
-  } while(termino/*int(moviminetos.find(cierre)) < 0*/);
-}
-
-void reading()
-{
-  string mssg;
-  do
-  {
-    bzero(buffer,TAM_MSG);
-    n = read(SocketFD,buffer,1);
-    //cout << buffer << endl;
-    mssg = buffer;
-
-    if(buffer[0] == '1') //lista de nicknames
-    {
-      n = read(SocketFD,buffer,1); // read size
-      buffer[n]='\0';
-      cout << buffer << endl;
-    }
-    else if(buffer[0] == '2') //lista de nicknames
-    {
-      n = read(SocketFD,buffer,1); // read size
-      buffer[n]='\0';
-      cout << buffer << endl;
-    }
-    else if(buffer[0] == '3') //lista de nicknames
-    {
-      n = read(SocketFD,buffer,1); // read size
-      buffer[n]='\0';
-      cout << buffer << endl;
-    }
-    else if(buffer[0] == '4') //lista de nicknames
-    {
-      n = read(SocketFD,buffer,1); // read size
-      buffer[n]='\0';
-      cout << buffer << endl;
-    }
-    else if(buffer[0] == '5') //el server envia OK
-    {
-      cout << "Correcto" << endl;
-    }
-
-  } while(termino);
-}
-
-int main()
-{
-    std::cout << "\t    SNAKE GAME (CLIENT - CLIENT)" << std::endl;
-
-
-    /*****************************REGISTRO DEL USUARIO *****************************/
-    std::cout << "Ingrese su Nickname:";
-    string nick_name,nick_size;
-    cin >> nick_name;
-    nick_size = nick_name.size() <= 9 ? nick_size = "0" + to_string(nick_name.size()) : nick_size = to_string(nick_name.size());
-    string final = "1" + nick_size + nick_name;
-    strcpy(buffer,final.c_str());
-    buffer[final.size()] = '\0';
-    n = write(SocketFD,buffer,final.size());
-    /*****************************REGISTRO DEL USUARIO *****************************/
-
-
-    std::thread hilo1(writing);
-    std::thread hilo2(reading);
-    hilo1.join();
-    hilo2.join();
-
-    shutdown(SocketFD, SHUT_RDWR);
-
-    close(_socket);
-
-	return 0;
 }
